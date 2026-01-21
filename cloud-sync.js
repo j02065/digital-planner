@@ -37,7 +37,7 @@ class CloudStorageSync {
     async authenticate() {
         const configs = {
             box: {
-                clientId: 'nya3rh3jh0mhtxp4cx45gaam7kmg1zrb', // ← PUT YOUR CLIENT ID HERE
+                clientId: 'l8501v9fvdi2j4x50w9jy6n3ucwekufv', // ← PUT YOUR CLIENT ID HERE
                 authUrl: 'https://account.box.com/api/oauth2/authorize',
                 // ↓↓↓ CHANGE THIS TO YOUR EXACT GITHUB PAGES URL ↓↓↓
                 redirectUri: 'https://j02065.github.io/digital-planner/'
@@ -61,11 +61,11 @@ class CloudStorageSync {
         }
 
             // DEBUG: Log what we're sending
-    console.log('=== DEBUG: OAuth Request ===');
-    console.log('Redirect URI:', config.redirectUri);
-    console.log('Redirect URI length:', config.redirectUri.length);
-    console.log('Redirect URI charCodes:', Array.from(config.redirectUri).map(c => c.charCodeAt(0)));
-    console.log('===========================');
+    // console.log('=== DEBUG: OAuth Request ===');
+    // console.log('Redirect URI:', config.redirectUri);
+    // console.log('Redirect URI length:', config.redirectUri.length);
+    // console.log('Redirect URI charCodes:', Array.from(config.redirectUri).map(c => c.charCodeAt(0)));
+    // console.log('===========================');
 
         // OAuth2 parameters
         const params = new URLSearchParams({
