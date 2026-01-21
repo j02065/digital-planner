@@ -61,11 +61,11 @@ class CloudStorageSync {
         }
 
             // DEBUG: Log what we're sending
-    // console.log('=== DEBUG: OAuth Request ===');
-    // console.log('Redirect URI:', config.redirectUri);
-    // console.log('Redirect URI length:', config.redirectUri.length);
-    // console.log('Redirect URI charCodes:', Array.from(config.redirectUri).map(c => c.charCodeAt(0)));
-    // console.log('===========================');
+     console.log('=== DEBUG: OAuth Request ===');
+     console.log('Redirect URI:', config.redirectUri);
+     console.log('Redirect URI length:', config.redirectUri.length);
+     console.log('Redirect URI charCodes:', Array.from(config.redirectUri).map(c => c.charCodeAt(0)));
+     console.log('===========================');
 
         // OAuth2 parameters
         const params = new URLSearchParams({
