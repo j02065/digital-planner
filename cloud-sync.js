@@ -37,21 +37,21 @@ class CloudStorageSync {
     async authenticate() {
         const configs = {
             box: {
-                clientId: 'hg3q6etueooioxakdss6utwnj2qb9gty', // ← PUT YOUR CLIENT ID HERE
+                clientId: 'YOUR_BOX_CLIENT_ID', // ← PUT YOUR CLIENT ID HERE
                 authUrl: 'https://account.box.com/api/oauth2/authorize',
                 // ↓↓↓ CHANGE THIS TO YOUR EXACT GITHUB PAGES URL ↓↓↓
-                redirectUri: 'https://j02065.github.io/digital-planner/'
+                redirectUri: 'https://YOUR-GITHUB-USERNAME.github.io/digital-planner'
                 // Example: 'https://john123.github.io/digital-planner'
             },
             onedrive: {
                 clientId: 'YOUR_ONEDRIVE_CLIENT_ID',
                 authUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
-                redirectUri: 'https://j02065.github.io/digital-planner/'
+                redirectUri: 'https://YOUR-GITHUB-USERNAME.github.io/digital-planner'
             },
             gdrive: {
                 clientId: 'YOUR_GDRIVE_CLIENT_ID',
                 authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-                redirectUri: 'https://j02065.github.io/digital-planner/'
+                redirectUri: 'https://YOUR-GITHUB-USERNAME.github.io/digital-planner'
             }
         };
 
