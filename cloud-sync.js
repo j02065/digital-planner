@@ -46,12 +46,12 @@ class CloudStorageSync {
             onedrive: {
                 clientId: 'YOUR_ONEDRIVE_CLIENT_ID',
                 authUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
-                redirectUri: 'https://YOUR-GITHUB-USERNAME.github.io/digital-planner'
+                redirectUri: 'https://j02065.github.io/digital-planner/'
             },
             gdrive: {
                 clientId: 'YOUR_GDRIVE_CLIENT_ID',
                 authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-                redirectUri: 'https://YOUR-GITHUB-USERNAME.github.io/digital-planner'
+                redirectUri: 'https://j02065.github.io/digital-planner/'
             }
         };
 
