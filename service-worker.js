@@ -1,8 +1,8 @@
 const CACHE_NAME = 'planner-v1';
 const urlsToCache = [
-  '/',
-  '/index.html',
-  '/manifest.json',
+  '/digital-planner/',
+  '/digital-planner/index.html',
+  '/digital-planner/manifest.json',
   'https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;600;700&family=JetBrains+Mono:wght@400;500&family=Permanent+Marker&display=swap'
 ];
 
@@ -10,7 +10,16 @@ const urlsToCache = [
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(urlsToCache))
+      .then(cache => {
+        console.log('Opening cache and adding files...');
+        return cache.addAll(urlsToCache);
+      })
+      .then(() => {
+        console.log('✅ All files cached successfully!');
+      })
+      .catch(error => {
+        console.error('❌ Cache addAll failed:', error);
+      })
   );
 });
 
