@@ -1,7 +1,6 @@
 /**
- * Cloud Storage Sync Module - WITH FOLDER SUPPORT
+ * Cloud Storage Sync Module
  * Supports Box, OneDrive, and Google Drive
- * Saves files in a dedicated "Digital Planner" folder
  */
 
 class CloudStorageSync {
@@ -10,8 +9,6 @@ class CloudStorageSync {
         this.accessToken = null;
         this.fileName = 'planner-data.json';
         this.settingsFileName = 'planner-settings.json';
-        this.folderName = 'Digital Planner'; // Folder to store files
-        this.folderId = null; // Will be set after finding/creating folder
     }
 
     /**
@@ -37,21 +34,19 @@ class CloudStorageSync {
     async authenticate() {
         const configs = {
             box: {
-                clientId: 'l8501v9fvdi2j4x50w9jy6n3ucwekufv', // ← PUT YOUR CLIENT ID HERE
+                clientId: 'hg3q6etueooioxakdss6utwnj2qb9gty', // Replace with your Box app client ID
                 authUrl: 'https://account.box.com/api/oauth2/authorize',
-                // ↓↓↓ CHANGE THIS TO YOUR EXACT GITHUB PAGES URL ↓↓↓
-                redirectUri: 'https://j02065.github.io/digital-planner/'
-                // Example: 'https://john123.github.io/digital-planner'
+                redirectUri: window.location.origin
             },
             onedrive: {
-                clientId: 'YOUR_ONEDRIVE_CLIENT_ID',
+                clientId: 'YOUR_ONEDRIVE_CLIENT_ID', // Replace with your OneDrive app client ID
                 authUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
-                redirectUri: 'https://YOUR-GITHUB-USERNAME.github.io/digital-planner'
+                redirectUri: window.location.origin
             },
             gdrive: {
-                clientId: 'YOUR_GDRIVE_CLIENT_ID',
+                clientId: 'YOUR_GDRIVE_CLIENT_ID', // Replace with your Google Drive client ID
                 authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-                redirectUri: 'https://YOUR-GITHUB-USERNAME.github.io/digital-planner'
+                redirectUri: window.location.origin
             }
         };
 
@@ -59,13 +54,6 @@ class CloudStorageSync {
         if (!config) {
             throw new Error('Invalid provider');
         }
-
-            // DEBUG: Log what we're sending
-     console.log('=== DEBUG: OAuth Request ===');
-     console.log('Redirect URI:', config.redirectUri);
-     console.log('Redirect URI length:', config.redirectUri.length);
-     console.log('Redirect URI charCodes:', Array.from(config.redirectUri).map(c => c.charCodeAt(0)));
-     console.log('===========================');
 
         // OAuth2 parameters
         const params = new URLSearchParams({
@@ -149,69 +137,16 @@ class CloudStorageSync {
     }
 
     /**
-     * ========================================
-     * BOX API METHODS - WITH FOLDER SUPPORT
-     * ========================================
+     * Box API methods
      */
-
-    /**
-     * Find or create the Digital Planner folder in Box
-     */
-    async ensureBoxFolder() {
-        if (this.folderId) return this.folderId;
-
-        // Search for existing folder
-        const searchResponse = await fetch(
-            `https://api.box.com/2.0/search?query=${encodeURIComponent(this.folderName)}&type=folder`,
-            {
-                headers: { 'Authorization': `Bearer ${this.accessToken}` }
-            }
-        );
-
-        if (searchResponse.ok) {
-            const data = await searchResponse.json();
-            if (data.entries && data.entries.length > 0) {
-                this.folderId = data.entries[0].id;
-                console.log(`✅ Found existing folder: ${this.folderName}`);
-                return this.folderId;
-            }
-        }
-
-        // Create new folder if not found
-        const createResponse = await fetch('https://api.box.com/2.0/folders', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${this.accessToken}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                name: this.folderName,
-                parent: { id: '0' } // 0 = root folder
-            })
-        });
-
-        if (!createResponse.ok) {
-            throw new Error('Failed to create folder in Box');
-        }
-
-        const folder = await createResponse.json();
-        this.folderId = folder.id;
-        console.log(`✅ Created new folder: ${this.folderName}`);
-        return this.folderId;
-    }
-
     async uploadToBox(data, fileName) {
-        // Ensure folder exists
-        const folderId = await this.ensureBoxFolder();
-        
-        // Check if file already exists in folder
-        const fileId = await this.findBoxFile(fileName, folderId);
+        const fileId = await this.findBoxFile(fileName);
         const content = JSON.stringify(data);
         
         const formData = new FormData();
         formData.append('attributes', JSON.stringify({
             name: fileName,
-            parent: { id: folderId } // Save in our folder
+            parent: { id: '0' }
         }));
         formData.append('file', new Blob([content], { type: 'application/json' }));
 
@@ -231,15 +166,11 @@ class CloudStorageSync {
             throw new Error('Failed to upload to Box');
         }
 
-        console.log(`✅ Saved ${fileName} to Box folder: ${this.folderName}`);
         return await response.json();
     }
 
     async downloadFromBox(fileName) {
-        // Ensure folder exists
-        const folderId = await this.ensureBoxFolder();
-        
-        const fileId = await this.findBoxFile(fileName, folderId);
+        const fileId = await this.findBoxFile(fileName);
         if (!fileId) return null;
 
         const response = await fetch(`https://api.box.com/2.0/files/${fileId}/content`, {
@@ -252,33 +183,28 @@ class CloudStorageSync {
             throw new Error('Failed to download from Box');
         }
 
-        console.log(`✅ Downloaded ${fileName} from Box folder: ${this.folderName}`);
         return await response.json();
     }
 
-    async findBoxFile(fileName, folderId) {
-        // Search for file in specific folder
-        const response = await fetch(
-            `https://api.box.com/2.0/folders/${folderId}/items?fields=id,name&limit=1000`,
-            {
-                headers: { 'Authorization': `Bearer ${this.accessToken}` }
+    async findBoxFile(fileName) {
+        const response = await fetch(`https://api.box.com/2.0/search?query=${fileName}&type=file`, {
+            headers: {
+                'Authorization': `Bearer ${this.accessToken}`
             }
-        );
+        });
 
         if (!response.ok) return null;
 
         const data = await response.json();
-        const file = data.entries.find(item => item.name === fileName && item.type === 'file');
-        return file ? file.id : null;
+        return data.entries?.[0]?.id || null;
     }
 
     /**
-     * OneDrive API methods - WITH FOLDER SUPPORT
+     * OneDrive API methods
      */
     async uploadToOneDrive(data, fileName) {
         const content = JSON.stringify(data);
-        // Save in "Digital Planner" folder
-        const url = `https://graph.microsoft.com/v1.0/me/drive/root:/${this.folderName}/${fileName}:/content`;
+        const url = `https://graph.microsoft.com/v1.0/me/drive/root:/${fileName}:/content`;
 
         const response = await fetch(url, {
             method: 'PUT',
@@ -293,12 +219,11 @@ class CloudStorageSync {
             throw new Error('Failed to upload to OneDrive');
         }
 
-        console.log(`✅ Saved ${fileName} to OneDrive folder: ${this.folderName}`);
         return await response.json();
     }
 
     async downloadFromOneDrive(fileName) {
-        const url = `https://graph.microsoft.com/v1.0/me/drive/root:/${this.folderName}/${fileName}:/content`;
+        const url = `https://graph.microsoft.com/v1.0/me/drive/root:/${fileName}:/content`;
 
         const response = await fetch(url, {
             headers: {
@@ -311,66 +236,19 @@ class CloudStorageSync {
             throw new Error('Failed to download from OneDrive');
         }
 
-        console.log(`✅ Downloaded ${fileName} from OneDrive folder: ${this.folderName}`);
         return await response.json();
     }
 
     /**
-     * Google Drive API methods - WITH FOLDER SUPPORT
+     * Google Drive API methods
      */
-    async ensureGDriveFolder() {
-        if (this.folderId) return this.folderId;
-
-        // Search for existing folder
-        const query = `name='${this.folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
-        const searchResponse = await fetch(
-            `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}`,
-            {
-                headers: { 'Authorization': `Bearer ${this.accessToken}` }
-            }
-        );
-
-        if (searchResponse.ok) {
-            const data = await searchResponse.json();
-            if (data.files && data.files.length > 0) {
-                this.folderId = data.files[0].id;
-                console.log(`✅ Found existing folder: ${this.folderName}`);
-                return this.folderId;
-            }
-        }
-
-        // Create new folder
-        const createResponse = await fetch('https://www.googleapis.com/drive/v3/files', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${this.accessToken}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                name: this.folderName,
-                mimeType: 'application/vnd.google-apps.folder'
-            })
-        });
-
-        if (!createResponse.ok) {
-            throw new Error('Failed to create folder in Google Drive');
-        }
-
-        const folder = await createResponse.json();
-        this.folderId = folder.id;
-        console.log(`✅ Created new folder: ${this.folderName}`);
-        return this.folderId;
-    }
-
     async uploadToGDrive(data, fileName) {
-        const folderId = await this.ensureGDriveFolder();
-        const fileId = await this.findGDriveFile(fileName, folderId);
+        const fileId = await this.findGDriveFile(fileName);
         const content = JSON.stringify(data);
         
         const metadata = {
             name: fileName,
-            mimeType: 'application/json',
-            parents: [folderId] // Save in our folder
+            mimeType: 'application/json'
         };
 
         const form = new FormData();
@@ -393,13 +271,11 @@ class CloudStorageSync {
             throw new Error('Failed to upload to Google Drive');
         }
 
-        console.log(`✅ Saved ${fileName} to Google Drive folder: ${this.folderName}`);
         return await response.json();
     }
 
     async downloadFromGDrive(fileName) {
-        const folderId = await this.ensureGDriveFolder();
-        const fileId = await this.findGDriveFile(fileName, folderId);
+        const fileId = await this.findGDriveFile(fileName);
         if (!fileId) return null;
 
         const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
@@ -412,18 +288,16 @@ class CloudStorageSync {
             throw new Error('Failed to download from Google Drive');
         }
 
-        console.log(`✅ Downloaded ${fileName} from Google Drive folder: ${this.folderName}`);
         return await response.json();
     }
 
-    async findGDriveFile(fileName, folderId) {
-        const query = `name='${fileName}' and '${folderId}' in parents and trashed=false`;
-        const response = await fetch(
-            `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}`,
-            {
-                headers: { 'Authorization': `Bearer ${this.accessToken}` }
+    async findGDriveFile(fileName) {
+        const query = `name='${fileName}' and trashed=false`;
+        const response = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}`, {
+            headers: {
+                'Authorization': `Bearer ${this.accessToken}`
             }
-        );
+        });
 
         if (!response.ok) return null;
 
@@ -436,8 +310,6 @@ class CloudStorageSync {
      */
     async syncData() {
         try {
-            console.log('🔄 Starting sync...');
-            
             // Download from cloud
             const cloudData = await this.downloadData();
             const cloudSettings = await this.downloadData(true);
@@ -458,10 +330,9 @@ class CloudStorageSync {
             await this.uploadData(mergedData);
             await this.uploadData(mergedSettings, true);
             
-            console.log('✅ Sync complete!');
             return { success: true, data: mergedData };
         } catch (error) {
-            console.error('❌ Sync error:', error);
+            console.error('Sync error:', error);
             return { success: false, error: error.message };
         }
     }
@@ -472,7 +343,6 @@ class CloudStorageSync {
     disconnect() {
         localStorage.removeItem(`${this.provider}_access_token`);
         this.accessToken = null;
-        this.folderId = null;
     }
 }
 
