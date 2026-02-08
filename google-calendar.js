@@ -7,7 +7,7 @@
 class GoogleCalendar {
     constructor() {
         this.accessToken = null;
-        this.clientId = 'YOUR_GOOGLE_CLIENT_ID'; // Replace with your Google OAuth client ID
+        this.clientId = '333156009579-lugr3tno4ar2ah4r81edec922ia15gfj.apps.googleusercontent.com'; // Replace with your Google OAuth client ID
         this.redirectUri = window.location.origin + window.location.pathname;
         this.calendarList = [];  // all available calendars
     }
