@@ -1096,6 +1096,7 @@
                 </div>
                 <div class="detail-right">
                     <div class="section-title">Daily Schedule (6:00 AM - 10:00 PM)</div>
+                    <div id="allDayEvents"></div>
                     <div class="time-grid" id="detailTimeGrid"></div>
                 </div>
             </div>
@@ -1831,6 +1832,25 @@
             document.getElementById('detailTasks').innerHTML = tasksHtml;
             
             // Render time grid (show ALL tasks including completed with visual indicators)
+            // Also include Google Calendar events
+            const [detailYear, detailMonth, detailDay] = currentDetailDate.split('-').map(Number);
+            const detailDateObj = new Date(detailYear, detailMonth - 1, detailDay);
+            const calEventsForDay = outlookEvents.filter(e => isSameDay(new Date(e.start), detailDateObj));
+
+            // Render all-day events
+            const allDayEvents = calEventsForDay.filter(e => e.isAllDay);
+            let allDayHtml = '';
+            if (allDayEvents.length > 0) {
+                allDayHtml = '<div style="margin-bottom: 10px; padding: 8px; background: #f9f9f9; border: 1px solid var(--line); border-radius: 4px;">';
+                allDayHtml += '<div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: #666; margin-bottom: 6px;">All-Day Events</div>';
+                allDayEvents.forEach(e => {
+                    const evtColor = e.color || 'var(--accent)';
+                    allDayHtml += `<div style="padding: 4px 8px; margin-bottom: 3px; border-left: 3px solid ${evtColor}; background: ${evtColor}15; border-radius: 2px; font-size: 13px; font-weight: 600;">📅 ${e.subject}${e.location ? ` <span style="font-weight: 400; color: #999; font-size: 11px;">· ${e.location}</span>` : ''}</div>`;
+                });
+                allDayHtml += '</div>';
+            }
+            document.getElementById('allDayEvents').innerHTML = allDayHtml;
+
             let timeHtml = '';
             for (let hour = 6; hour <= 22; hour++) {
                 const hour12 = hour > 12 ? hour - 12 : hour;
@@ -1842,10 +1862,34 @@
                     const [taskHour] = t.timeStart.split(':').map(Number);
                     return taskHour === hour;
                 });
+
+                // Find calendar events in this hour
+                const eventsInHour = calEventsForDay.filter(e => {
+                    const eventStart = new Date(e.start);
+                    const eventEnd = new Date(e.end);
+                    const slotStart = new Date(detailYear, detailMonth - 1, detailDay, hour, 0);
+                    const slotEnd = new Date(detailYear, detailMonth - 1, detailDay, hour + 1, 0);
+                    // Event overlaps this hour slot
+                    return eventStart < slotEnd && eventEnd > slotStart && !e.isAllDay;
+                });
                 
                 timeHtml += `
                     <div class="time-slot" onclick="fillTimeSlot(${hour})" style="cursor: pointer;" title="Click to add task at this time">${timeStr}</div>
                     <div class="time-content" onclick="fillTimeSlot(${hour})" style="cursor: pointer;">
+                        ${eventsInHour.map(e => {
+                            const evtColor = e.color || 'var(--accent)';
+                            const startTime = formatTime(new Date(e.start));
+                            const endTime = formatTime(new Date(e.end));
+                            return `
+                            <div class="time-block-item" style="margin-bottom: 4px;">
+                                <div style="position: absolute; left:0; right:0; top:0; bottom:0; opacity:0.2; border-radius:3px; background:${evtColor};"></div>
+                                <div style="position: relative; font-size: 12px; font-weight: 600; color: ${evtColor};">
+                                    📅 ${e.subject} <span style="font-size: 10px; font-weight: 400; color: #666;">${startTime}–${endTime}</span>
+                                    ${e.location ? `<span style="font-size: 10px; color: #999;"> · ${e.location}</span>` : ''}
+                                </div>
+                            </div>
+                        `;
+                        }).join('')}
                         ${tasksInHour.map(t => {
                             const statusClass = t.status === 'done' ? 'time-block-done' : 
                                                (t.status === 'cancelled' || t.status === 'moved') ? 'time-block-cancelled' : '';
