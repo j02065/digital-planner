@@ -36,17 +36,17 @@ class CloudStorageSync {
             box: {
                 clientId: 'hg3q6etueooioxakdss6utwnj2qb9gty', // Replace with your Box app client ID
                 authUrl: 'https://account.box.com/api/oauth2/authorize',
-                redirectUri: window.location.origin
+                redirectUri: window.location.origin + window.location.pathname
             },
             onedrive: {
                 clientId: 'YOUR_ONEDRIVE_CLIENT_ID', // Replace with your OneDrive app client ID
                 authUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
-                redirectUri: window.location.origin
+                redirectUri: window.location.origin + window.location.pathname
             },
             gdrive: {
                 clientId: 'YOUR_GDRIVE_CLIENT_ID', // Replace with your Google Drive client ID
                 authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-                redirectUri: window.location.origin
+                redirectUri: window.location.origin + window.location.pathname
             }
         };
 
