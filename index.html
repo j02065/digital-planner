@@ -1037,7 +1037,8 @@
                 <button class="btn btn-small cloud-connect-btn" data-provider="gdrive" onclick="connectCloudProvider('gdrive')">Connect</button>
                 <span style="font-size: 12px;">Google Drive</span>
                 <span style="color: var(--line); margin: 0 8px;">|</span>
-                <button class="btn btn-small" id="syncBtn" onclick="performSync()" style="display: none; background: var(--primary);">Sync Now</button>
+                <button class="btn btn-small" id="pushBtn" onclick="performPush()" style="display: none; background: var(--primary);">⬆ Push</button>
+                <button class="btn btn-small" id="pullBtn" onclick="performPull()" style="display: none; background: #4a90e2;">⬇ Pull</button>
             </div>
         </div>
 
@@ -1177,7 +1178,6 @@
         renderView();
         updateSyncUI();
         updateCalendarUI();
-        performSyncSilent(); // Sync on page load
 
         /**
          * Handle OAuth redirect callbacks on page load.
@@ -1223,7 +1223,17 @@
             }
         }
 
-        function saveData() {
+        function saveData(...modifiedDateKeys) {
+            // Stamp modified days with a timestamp
+            const now = Date.now();
+            modifiedDateKeys.forEach(key => {
+                if (plannerData[key]) {
+                    plannerData[key].lastModified = now;
+                }
+            });
+            // Also stamp settings when they change
+            globalSettings.lastModified = now;
+
             localStorage.setItem('advanced-planner-data-v4', JSON.stringify(plannerData));
             localStorage.setItem('planner-settings', JSON.stringify(globalSettings));
             scheduleAutoSync();
@@ -1243,53 +1253,48 @@
         function scheduleAutoSync() {
             if (autoSyncTimer) clearTimeout(autoSyncTimer);
             autoSyncTimer = setTimeout(() => {
-                performSyncSilent();
+                performPushSilent();
             }, AUTO_SYNC_DELAY);
         }
 
         /**
-         * Silent sync — no alerts or UI blocking.
-         * Used for automatic background syncing.
+         * Silent push — no alerts or UI blocking.
+         * Used for automatic background pushing after changes.
          */
-        async function performSyncSilent() {
-            const providers = ['box', 'onedrive', 'gdrive'];
-            let connected = null;
-            for (const p of providers) {
-                const token = localStorage.getItem(`${p}_access_token`);
-                if (token) { connected = p; break; }
-            }
-            if (!connected) return; // No provider connected, skip silently
+        async function performPushSilent() {
+            const connected = getConnectedProvider();
+            if (!connected) return;
 
             const statusEl = document.getElementById('syncStatus');
 
             try {
                 await cloudSync.initialize(connected);
                 cloudSync.accessToken = localStorage.getItem(`${connected}_access_token`);
-                const result = await cloudSync.syncData();
 
-                if (result.success) {
-                    loadData();
-                    if (statusEl) {
-                        const now = new Date();
-                        const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                        statusEl.textContent = `Auto-synced at ${timeStr} ✓`;
-                        statusEl.style.color = '#4caf50';
-                    }
-                } else {
-                    console.warn('Auto-sync failed:', result.error);
-                    if (statusEl) {
-                        statusEl.textContent = 'Auto-sync failed';
-                        statusEl.style.color = '#f44336';
-                    }
+                const localData = JSON.parse(localStorage.getItem('advanced-planner-data-v4') || '{}');
+                const localSettings = JSON.parse(localStorage.getItem('planner-settings') || '{}');
+
+                await cloudSync.uploadData(localData);
+                await cloudSync.uploadData(localSettings, true);
+
+                if (statusEl) {
+                    const now = new Date();
+                    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    statusEl.textContent = `Auto-pushed at ${timeStr} ✓`;
+                    statusEl.style.color = '#4caf50';
                 }
             } catch (err) {
-                console.warn('Auto-sync error:', err);
+                console.warn('Auto-push error:', err);
+                if (statusEl) {
+                    statusEl.textContent = 'Auto-push failed';
+                    statusEl.style.color = '#f44336';
+                }
             }
         }
 
-        // Start hourly background sync
+        // Start hourly background push
         setInterval(() => {
-            performSyncSilent();
+            performPushSilent();
         }, HOURLY_SYNC_INTERVAL);
 
         function getDateKey(date) {
@@ -1450,12 +1455,14 @@
                 }
             }
 
-            const syncBtn = document.getElementById('syncBtn');
+            const pushBtn = document.getElementById('pushBtn');
+            const pullBtn = document.getElementById('pullBtn');
             if (connected) {
                 const names = { box: 'Box', onedrive: 'OneDrive', gdrive: 'Google Drive' };
                 statusEl.textContent = `Connected to ${names[connected]}`;
                 statusEl.style.color = '#4caf50';
-                if (syncBtn) syncBtn.style.display = 'inline-block';
+                if (pushBtn) pushBtn.style.display = 'inline-block';
+                if (pullBtn) pullBtn.style.display = 'inline-block';
                 // Update button states
                 document.querySelectorAll('.cloud-connect-btn').forEach(btn => {
                     const provider = btn.dataset.provider;
@@ -1470,7 +1477,8 @@
             } else {
                 statusEl.textContent = 'Not connected';
                 statusEl.style.color = '#999';
-                if (syncBtn) syncBtn.style.display = 'none';
+                if (pushBtn) pushBtn.style.display = 'none';
+                if (pullBtn) pullBtn.style.display = 'none';
                 document.querySelectorAll('.cloud-connect-btn').forEach(btn => {
                     btn.textContent = 'Connect';
                     btn.classList.remove('connected');
@@ -1502,47 +1510,100 @@
             }
         }
 
-        async function performSync() {
-            const statusEl = document.getElementById('syncStatus');
-            const syncBtn = document.getElementById('syncBtn');
-
-            // Find which provider is connected
-            const providers = ['box', 'onedrive', 'gdrive'];
-            let connected = null;
-            for (const p of providers) {
-                const token = localStorage.getItem(`${p}_access_token`);
-                if (token) { connected = p; break; }
+        /**
+         * Get the connected cloud provider, or null
+         */
+        function getConnectedProvider() {
+            for (const p of ['box', 'onedrive', 'gdrive']) {
+                if (localStorage.getItem(`${p}_access_token`)) return p;
             }
+            return null;
+        }
+
+        /**
+         * Push: Upload local data to cloud (local overwrites cloud)
+         */
+        async function performPush() {
+            const statusEl = document.getElementById('syncStatus');
+            const pushBtn = document.getElementById('pushBtn');
+            const connected = getConnectedProvider();
 
             if (!connected) {
                 alert('No cloud storage connected.');
                 return;
             }
 
-            statusEl.textContent = 'Syncing...';
+            statusEl.textContent = 'Pushing...';
             statusEl.style.color = '#ff8800';
-            syncBtn.disabled = true;
+            pushBtn.disabled = true;
 
             try {
                 await cloudSync.initialize(connected);
                 cloudSync.accessToken = localStorage.getItem(`${connected}_access_token`);
-                const result = await cloudSync.syncData();
 
-                if (result.success) {
-                    // Reload local data after sync
-                    loadData();
-                    renderView();
-                    statusEl.textContent = `Synced with ${connected.charAt(0).toUpperCase() + connected.slice(1)} ✓`;
-                    statusEl.style.color = '#4caf50';
-                } else {
-                    throw new Error(result.error);
-                }
+                const localData = JSON.parse(localStorage.getItem('advanced-planner-data-v4') || '{}');
+                const localSettings = JSON.parse(localStorage.getItem('planner-settings') || '{}');
+
+                await cloudSync.uploadData(localData);
+                await cloudSync.uploadData(localSettings, true);
+
+                const now = new Date();
+                const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                statusEl.textContent = `Pushed at ${timeStr} ✓`;
+                statusEl.style.color = '#4caf50';
             } catch (err) {
-                console.error('Sync error:', err);
-                statusEl.textContent = 'Sync failed: ' + err.message;
+                console.error('Push error:', err);
+                statusEl.textContent = 'Push failed: ' + err.message;
                 statusEl.style.color = '#f44336';
             } finally {
-                syncBtn.disabled = false;
+                pushBtn.disabled = false;
+            }
+        }
+
+        /**
+         * Pull: Download cloud data and replace local (cloud overwrites local)
+         */
+        async function performPull() {
+            const statusEl = document.getElementById('syncStatus');
+            const pullBtn = document.getElementById('pullBtn');
+            const connected = getConnectedProvider();
+
+            if (!connected) {
+                alert('No cloud storage connected.');
+                return;
+            }
+
+            if (!confirm('This will replace your local data with the cloud version. Continue?')) {
+                return;
+            }
+
+            statusEl.textContent = 'Pulling...';
+            statusEl.style.color = '#ff8800';
+            pullBtn.disabled = true;
+
+            try {
+                await cloudSync.initialize(connected);
+                cloudSync.accessToken = localStorage.getItem(`${connected}_access_token`);
+
+                const cloudData = await cloudSync.downloadData() || {};
+                const cloudSettings = await cloudSync.downloadData(true) || {};
+
+                localStorage.setItem('advanced-planner-data-v4', JSON.stringify(cloudData));
+                localStorage.setItem('planner-settings', JSON.stringify(cloudSettings));
+
+                loadData();
+                renderView();
+
+                const now = new Date();
+                const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                statusEl.textContent = `Pulled at ${timeStr} ✓`;
+                statusEl.style.color = '#4caf50';
+            } catch (err) {
+                console.error('Pull error:', err);
+                statusEl.textContent = 'Pull failed: ' + err.message;
+                statusEl.style.color = '#f44336';
+            } finally {
+                pullBtn.disabled = false;
             }
         }
 
@@ -2076,7 +2137,7 @@
             if (taskToMove) {
                 const dayData = plannerData[taskToMove.fromDate];
                 dayData.tasks[taskToMove.index].status = '';
-                saveData();
+                saveData(taskToMove.fromDate);
                 closeMoveModal();
                 renderDetailView();
                 renderView();
@@ -2089,11 +2150,11 @@
             
             if (!task.status || task.status === '') {
                 task.status = 'done';
-                saveData();
+                saveData(dateKey);
                 renderView();
             } else if (task.status === 'done') {
                 task.status = 'cancelled';
-                saveData();
+                saveData(dateKey);
                 renderView();
             } else if (task.status === 'cancelled') {
                 // Open detail view and show move modal
@@ -2104,7 +2165,7 @@
             } else if (task.status === 'moved') {
                 task.status = '';
                 delete task.movedTo;
-                saveData();
+                saveData(dateKey);
                 renderView();
             }
         }
@@ -2125,7 +2186,7 @@
                 task.status = '';
             }
             
-            saveData();
+            saveData(currentDetailDate);
             renderDetailView();
             renderView();
         }
@@ -2224,7 +2285,7 @@
             
             plannerData[toDate].tasks.push(copiedTask);
             
-            saveData();
+            saveData(taskToMove.fromDate, toDate);
             closeMoveModal();
             renderDetailView();
             renderView();
@@ -2252,7 +2313,7 @@
             const dayData = plannerData[currentDetailDate];
             dayData.tasks.splice(index, 1);
             
-            saveData();
+            saveData(currentDetailDate);
             renderDetailView();
             renderView();
         }
@@ -2306,7 +2367,7 @@
             document.getElementById('detailHighlight').value = '';
             document.getElementById('detailOrder').value = '1';
             
-            saveData();
+            saveData(currentDetailDate);
             updateTagsList();
             renderDetailView();
         }
