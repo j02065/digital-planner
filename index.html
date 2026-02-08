@@ -1292,10 +1292,8 @@
             }
         }
 
-        // Start hourly background push
-        setInterval(() => {
-            performPushSilent();
-        }, HOURLY_SYNC_INTERVAL);
+        // Start hourly background push — disabled
+        // (was causing empty file issues)
 
         function getDateKey(date) {
             return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -1903,6 +1901,26 @@
             document.getElementById('dailyDetailView').classList.remove('active');
             renderView();
         }
+
+        // Close detail view or modals on Escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                // Close modals first (they sit on top)
+                const moveModal = document.getElementById('moveModal');
+                const categoryModal = document.getElementById('categoryModal');
+                const calendarPicker = document.getElementById('calendarPickerModal');
+
+                if (moveModal.classList.contains('active')) {
+                    closeMoveModal();
+                } else if (categoryModal.classList.contains('active')) {
+                    closeCategoryModal();
+                } else if (calendarPicker.classList.contains('active')) {
+                    closeCalendarPicker();
+                } else if (document.getElementById('dailyDetailView').classList.contains('active')) {
+                    closeDetailView();
+                }
+            }
+        });
 
         function updateTagsList() {
             const allTags = new Set();
