@@ -1177,6 +1177,7 @@
         renderView();
         updateSyncUI();
         updateCalendarUI();
+        performSyncSilent(); // Sync on page load
 
         /**
          * Handle OAuth redirect callbacks on page load.
@@ -1225,7 +1226,71 @@
         function saveData() {
             localStorage.setItem('advanced-planner-data-v4', JSON.stringify(plannerData));
             localStorage.setItem('planner-settings', JSON.stringify(globalSettings));
+            scheduleAutoSync();
         }
+
+        // ─── Auto-Sync ───
+
+        let autoSyncTimer = null;
+        const AUTO_SYNC_DELAY = 30000;        // 30 seconds after last change
+        const HOURLY_SYNC_INTERVAL = 3600000;  // 1 hour
+
+        /**
+         * Schedule a sync 30 seconds after the last change.
+         * Resets the timer on each new change so rapid edits
+         * don't trigger multiple syncs.
+         */
+        function scheduleAutoSync() {
+            if (autoSyncTimer) clearTimeout(autoSyncTimer);
+            autoSyncTimer = setTimeout(() => {
+                performSyncSilent();
+            }, AUTO_SYNC_DELAY);
+        }
+
+        /**
+         * Silent sync — no alerts or UI blocking.
+         * Used for automatic background syncing.
+         */
+        async function performSyncSilent() {
+            const providers = ['box', 'onedrive', 'gdrive'];
+            let connected = null;
+            for (const p of providers) {
+                const token = localStorage.getItem(`${p}_access_token`);
+                if (token) { connected = p; break; }
+            }
+            if (!connected) return; // No provider connected, skip silently
+
+            const statusEl = document.getElementById('syncStatus');
+
+            try {
+                await cloudSync.initialize(connected);
+                cloudSync.accessToken = localStorage.getItem(`${connected}_access_token`);
+                const result = await cloudSync.syncData();
+
+                if (result.success) {
+                    loadData();
+                    if (statusEl) {
+                        const now = new Date();
+                        const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                        statusEl.textContent = `Auto-synced at ${timeStr} ✓`;
+                        statusEl.style.color = '#4caf50';
+                    }
+                } else {
+                    console.warn('Auto-sync failed:', result.error);
+                    if (statusEl) {
+                        statusEl.textContent = 'Auto-sync failed';
+                        statusEl.style.color = '#f44336';
+                    }
+                }
+            } catch (err) {
+                console.warn('Auto-sync error:', err);
+            }
+        }
+
+        // Start hourly background sync
+        setInterval(() => {
+            performSyncSilent();
+        }, HOURLY_SYNC_INTERVAL);
 
         function getDateKey(date) {
             return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
