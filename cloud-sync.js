@@ -44,7 +44,7 @@ class CloudStorageSync {
                 redirectUri: window.location.origin + window.location.pathname
             },
             gdrive: {
-                clientId: 'YOUR_GDRIVE_CLIENT_ID', // Replace with your Google Drive client ID
+                clientId: '333156009579-lugr3tno4ar2ah4r81edec922ia15gfj.apps.googleusercontent.com', // Replace with your Google Drive client ID
                 authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
                 redirectUri: window.location.origin + window.location.pathname
             }
