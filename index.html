@@ -74,6 +74,18 @@
             background: #c26852;
         }
 
+        .cloud-connect-btn.connected {
+            background: #4caf50;
+        }
+
+        .cloud-connect-btn.connected:hover {
+            background: #e53935;
+        }
+
+        #syncPanel.active {
+            display: block !important;
+        }
+
         .btn-small {
             padding: 3px 8px;
             font-size: 11px;
@@ -1002,7 +1014,30 @@
     <div class="app-container">
         <div class="header">
             <h1>Advanced Digital Planner</h1>
-            <button class="btn" onclick="handleAuth()">Connect Outlook</button>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <button class="btn" id="outlookBtn" onclick="handleAuth()">Connect Outlook</button>
+                <button class="btn" onclick="toggleSyncPanel()" style="background: var(--primary); border: 1px solid rgba(255,255,255,0.3);">☁ Cloud Sync</button>
+            </div>
+        </div>
+
+        <!-- Cloud Sync Panel (dropdown) -->
+        <div id="syncPanel" style="display: none; background: white; border-bottom: 2px solid var(--line); padding: 16px 24px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <strong style="font-size: 14px; color: var(--primary);">Cloud Storage Sync</strong>
+                <span id="syncStatus" style="font-size: 12px; color: #999;">Not connected</span>
+            </div>
+            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                <button class="btn btn-small cloud-connect-btn" data-provider="box" onclick="connectCloudProvider('box')">Connect</button>
+                <span style="font-size: 12px;">Box</span>
+                <span style="color: var(--line); margin: 0 4px;">|</span>
+                <button class="btn btn-small cloud-connect-btn" data-provider="onedrive" onclick="connectCloudProvider('onedrive')">Connect</button>
+                <span style="font-size: 12px;">OneDrive</span>
+                <span style="color: var(--line); margin: 0 4px;">|</span>
+                <button class="btn btn-small cloud-connect-btn" data-provider="gdrive" onclick="connectCloudProvider('gdrive')">Connect</button>
+                <span style="font-size: 12px;">Google Drive</span>
+                <span style="color: var(--line); margin: 0 8px;">|</span>
+                <button class="btn btn-small" id="syncBtn" onclick="performSync()" style="display: none; background: var(--primary);">Sync Now</button>
+            </div>
         </div>
 
         <div class="controls">
@@ -1106,6 +1141,9 @@
         </div>
     </div>
 
+    <script src="outlook-calendar.js"></script>
+    <script src="cloud-sync.js"></script>
+
     <script>
         let currentView = 'week';
         let currentDate = new Date();
@@ -1118,9 +1156,50 @@
         let moveCalendarDate = new Date();
         let taskToMove = null;
 
+        // Integration instances
+        const outlookCalendar = new OutlookCalendar();
+        const cloudSync = new CloudStorageSync();
+
         // Initialize
+        handleOAuthCallback();
         loadData();
         renderView();
+        updateSyncUI();
+        updateOutlookUI();
+
+        /**
+         * Handle OAuth redirect callbacks on page load.
+         * After authenticating with Outlook or Box, the browser redirects back
+         * with an access_token in the URL hash. We detect that here.
+         */
+        function handleOAuthCallback() {
+            const hash = window.location.hash;
+            if (!hash || !hash.includes('access_token')) return;
+
+            // Determine which provider this callback is for based on saved state
+            const pendingProvider = localStorage.getItem('pending_oauth_provider');
+
+            if (pendingProvider === 'outlook') {
+                if (outlookCalendar.handleAuthCallback()) {
+                    localStorage.removeItem('pending_oauth_provider');
+                    console.log('Outlook authenticated successfully');
+                    // Fetch events for current view after auth
+                    fetchOutlookEvents();
+                }
+            } else if (pendingProvider === 'box' || pendingProvider === 'onedrive' || pendingProvider === 'gdrive') {
+                cloudSync.provider = pendingProvider;
+                if (cloudSync.handleAuthCallback()) {
+                    localStorage.removeItem('pending_oauth_provider');
+                    console.log(`${pendingProvider} authenticated successfully`);
+                }
+            } else {
+                // Try Outlook first, then cloud sync providers
+                if (outlookCalendar.handleAuthCallback()) {
+                    console.log('Outlook authenticated via fallback detection');
+                    fetchOutlookEvents();
+                }
+            }
+        }
 
         function loadData() {
             const saved = localStorage.getItem('advanced-planner-data-v4');
@@ -1150,31 +1229,177 @@
             return plannerData[key];
         }
 
+        // ─── Outlook Calendar Integration ───
+
         function handleAuth() {
-            alert('Demo mode. Follow SETUP_GUIDE.md to connect Outlook.');
-            loadSampleEvents();
-            renderView();
+            if (outlookCalendar.isAuthenticated()) {
+                // Already connected — offer to disconnect
+                if (confirm('Outlook is connected. Disconnect?')) {
+                    outlookCalendar.disconnect();
+                    outlookEvents = [];
+                    updateOutlookUI();
+                    renderView();
+                }
+            } else {
+                // Start OAuth flow
+                localStorage.setItem('pending_oauth_provider', 'outlook');
+                outlookCalendar.authenticate();
+            }
         }
 
-        function loadSampleEvents() {
-            const today = new Date();
-            outlookEvents = [
-                {
-                    subject: 'Team Standup',
-                    start: new Date(today.getFullYear(), today.getMonth(), today.getDate(), 9, 0),
-                    end: new Date(today.getFullYear(), today.getMonth(), today.getDate(), 9, 30)
-                },
-                {
-                    subject: 'Project Review',
-                    start: new Date(today.getFullYear(), today.getMonth(), today.getDate(), 14, 0),
-                    end: new Date(today.getFullYear(), today.getMonth(), today.getDate(), 15, 30)
-                },
-                {
-                    subject: 'Client Meeting',
-                    start: new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1, 10, 0),
-                    end: new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1, 11, 0)
+        function updateOutlookUI() {
+            const btn = document.getElementById('outlookBtn');
+            if (!btn) return;
+            if (outlookCalendar.isAuthenticated()) {
+                btn.textContent = '✓ Outlook Connected';
+                btn.style.background = '#4caf50';
+                // Auto-fetch events on load if connected
+                fetchOutlookEvents();
+            } else {
+                btn.textContent = 'Connect Outlook';
+                btn.style.background = '';
+            }
+        }
+
+        async function fetchOutlookEvents() {
+            if (!outlookCalendar.isAuthenticated()) return;
+
+            try {
+                // Fetch events for a wide window: 30 days before and after current date
+                const start = new Date(currentDate);
+                start.setDate(start.getDate() - 30);
+                const end = new Date(currentDate);
+                end.setDate(end.getDate() + 60);
+
+                outlookEvents = await outlookCalendar.fetchEvents(start, end);
+                renderView();
+            } catch (err) {
+                console.error('Failed to fetch Outlook events:', err);
+                if (err.message.includes('Authentication expired')) {
+                    alert('Outlook session expired. Please sign in again.');
+                    updateOutlookUI();
+                } else {
+                    alert('Error fetching Outlook events: ' + err.message);
                 }
-            ];
+            }
+        }
+
+        // ─── Cloud Storage Sync Integration ───
+
+        function toggleSyncPanel() {
+            const panel = document.getElementById('syncPanel');
+            panel.classList.toggle('active');
+        }
+
+        function updateSyncUI() {
+            const statusEl = document.getElementById('syncStatus');
+            if (!statusEl) return;
+
+            const providers = ['box', 'onedrive', 'gdrive'];
+            let connected = null;
+
+            for (const p of providers) {
+                const token = localStorage.getItem(`${p}_access_token`);
+                if (token) {
+                    connected = p;
+                    break;
+                }
+            }
+
+            const syncBtn = document.getElementById('syncBtn');
+            if (connected) {
+                const names = { box: 'Box', onedrive: 'OneDrive', gdrive: 'Google Drive' };
+                statusEl.textContent = `Connected to ${names[connected]}`;
+                statusEl.style.color = '#4caf50';
+                if (syncBtn) syncBtn.style.display = 'inline-block';
+                // Update button states
+                document.querySelectorAll('.cloud-connect-btn').forEach(btn => {
+                    const provider = btn.dataset.provider;
+                    if (provider === connected) {
+                        btn.textContent = 'Disconnect';
+                        btn.classList.add('connected');
+                    } else {
+                        btn.disabled = true;
+                        btn.style.opacity = '0.4';
+                    }
+                });
+            } else {
+                statusEl.textContent = 'Not connected';
+                statusEl.style.color = '#999';
+                if (syncBtn) syncBtn.style.display = 'none';
+                document.querySelectorAll('.cloud-connect-btn').forEach(btn => {
+                    btn.textContent = 'Connect';
+                    btn.classList.remove('connected');
+                    btn.disabled = false;
+                    btn.style.opacity = '1';
+                });
+            }
+        }
+
+        async function connectCloudProvider(provider) {
+            const token = localStorage.getItem(`${provider}_access_token`);
+            if (token) {
+                // Disconnect
+                cloudSync.provider = provider;
+                cloudSync.disconnect();
+                updateSyncUI();
+                return;
+            }
+
+            await cloudSync.initialize(provider);
+            if (cloudSync.accessToken) {
+                // Already have a valid token
+                updateSyncUI();
+            } else {
+                // Start OAuth flow
+                cloudSync.provider = provider;
+                localStorage.setItem('pending_oauth_provider', provider);
+                cloudSync.authenticate();
+            }
+        }
+
+        async function performSync() {
+            const statusEl = document.getElementById('syncStatus');
+            const syncBtn = document.getElementById('syncBtn');
+
+            // Find which provider is connected
+            const providers = ['box', 'onedrive', 'gdrive'];
+            let connected = null;
+            for (const p of providers) {
+                const token = localStorage.getItem(`${p}_access_token`);
+                if (token) { connected = p; break; }
+            }
+
+            if (!connected) {
+                alert('No cloud storage connected.');
+                return;
+            }
+
+            statusEl.textContent = 'Syncing...';
+            statusEl.style.color = '#ff8800';
+            syncBtn.disabled = true;
+
+            try {
+                await cloudSync.initialize(connected);
+                cloudSync.accessToken = localStorage.getItem(`${connected}_access_token`);
+                const result = await cloudSync.syncData();
+
+                if (result.success) {
+                    // Reload local data after sync
+                    loadData();
+                    renderView();
+                    statusEl.textContent = `Synced with ${connected.charAt(0).toUpperCase() + connected.slice(1)} ✓`;
+                    statusEl.style.color = '#4caf50';
+                } else {
+                    throw new Error(result.error);
+                }
+            } catch (err) {
+                console.error('Sync error:', err);
+                statusEl.textContent = 'Sync failed: ' + err.message;
+                statusEl.style.color = '#f44336';
+            } finally {
+                syncBtn.disabled = false;
+            }
         }
 
         function switchView(view) {
